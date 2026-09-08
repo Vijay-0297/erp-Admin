@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Pencil, Trash2, PackagePlus } from 'lucide-react'
 import { getProducts, deleteProduct } from '../../api/productApi'
-import { getCategories } from '../../api/categoryApi'
 import { useApi, useMutation } from '../../hooks/useApi'
+import { useCategories } from '../../context/CategoriesContext'
 import { useDebounce } from '../../hooks/useDebounce'
 import PageHeader from '../../components/common/PageHeader.jsx'
 import SearchInput from '../../components/forms/SearchInput.jsx'
@@ -16,7 +16,9 @@ import { formatCurrency } from '../../utils/formatters'
 
 export default function ProductsListPage() {
   const { data: products, isLoading, error, refetch } = useApi(getProducts, [])
-  const { data: categories } = useApi(getCategories, [])
+  const { categories } = useCategories()
+
+  
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search)
   const [formState, setFormState] = useState({ isOpen: false, product: null })
@@ -25,20 +27,55 @@ export default function ProductsListPage() {
 
   const categoryNameById = useMemo(() => {
     const map = {}
-    ;(categories || []).forEach((c) => (map[c.id] = c.categoryName))
+    ;(categories || []).forEach((category) => {
+      // The backend may expose the primary key as either `id` or `categoryId`.
+      // Normalizing it also handles number/string ID differences.
+      const categoryId = category.id ?? category.categoryId
+      if (categoryId != null) map[String(categoryId)] = category.categoryName
+    })
     return map
   }, [categories])
 
   const filteredProducts = useMemo(() => {
-    if (!products) return []
+    // Merge any locally saved products (offline fallback) so they appear in the list
+    const localSaved = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('local_products') || '[]')
+      } catch (e) {
+        return []
+      }
+    })()
+
+    const merged = (products || []).concat(
+      (localSaved || []).filter((lp) => !(products || []).some((p) => p.id === lp.id))
+    )
+    if (!merged) return []
     const q = debouncedSearch.trim().toLowerCase()
-    if (!q) return products
-    return products.filter((p) => [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q)))
+    if (!q) return merged
+    return merged.filter((p) => [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q)))
   }, [products, debouncedSearch])
 
   const handleDelete = async () => {
     try {
-      await runDelete(deleteTarget.id)
+      const id = deleteTarget?.id
+
+      // If this is a locally-saved (offline) product, remove it from localStorage
+      if (typeof id === 'string' && id.startsWith('local-')) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('local_products') || '[]')
+          const filtered = (saved || []).filter((p) => p.id !== id)
+          localStorage.setItem('local_products', JSON.stringify(filtered))
+          toast.success('Local product deleted')
+          setDeleteTarget(null)
+          refetch()
+          return
+        } catch (localErr) {
+          toast.error(localErr?.message || 'Failed to delete local product')
+          return
+        }
+      }
+
+      await runDelete(id)
       toast.success('Product deleted')
       setDeleteTarget(null)
       refetch()
@@ -53,7 +90,7 @@ export default function ProductsListPage() {
     {
       key: 'categoryId',
       header: 'Category',
-      render: (row) => categoryNameById[row.categoryId] || '—',
+      render: (row) => categoryNameById[String(row.categoryId)] || '—',
     },
     { key: 'sellingPrice', header: 'Price', sortable: true, render: (row) => formatCurrency(row.sellingPrice) },
     {

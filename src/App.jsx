@@ -1,9 +1,10 @@
 import { Toaster } from 'react-hot-toast'
 import AppRoutes from './routes/AppRoutes.jsx'
+import { CategoriesProvider } from './context/CategoriesContext'
 
 export default function App() {
   return (
-    <>
+    <CategoriesProvider>
       <AppRoutes />
       <Toaster
         position="top-right"
@@ -19,6 +20,6 @@ export default function App() {
           error: { iconTheme: { primary: '#e6484f', secondary: '#fff' } },
         }}
       />
-    </>
+    </CategoriesProvider>
   )
 }
