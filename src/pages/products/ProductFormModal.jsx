@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import Modal from '../../components/ui/Modal.jsx'
 import Input from '../../components/ui/Input.jsx'
 import Select from '../../components/ui/Select.jsx'
 import Button from '../../components/ui/Button.jsx'
 import { createProduct, updateProduct } from '../../api/productApi'
+import { getCategories } from '../../api/categoryApi'
 import { validate, isRequired, isPositiveNumber } from '../../utils/validators'
 import { STATUS_OPTIONS } from '../../utils/constants'
+import {
+  getProductId,
+  getCategoryId,
+  getCategoryName,
+  resolveProductCategoryId,
+  resolveProductCategoryName,
+} from '../../utils/productUtils'
 
 const EMPTY = {
   categoryId: '',
@@ -21,100 +29,150 @@ const EMPTY = {
   status: 'active',
 }
 
-export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories }) {
+export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories = [] }) {
   const isEditMode = Boolean(product)
   const [values, setValues] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [internalCategories, setInternalCategories] = useState([])
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false)
 
-  useEffect(() => {
-    if (isOpen) {
-      setValues(
-        product
-          ? {
-              categoryId: product.categoryId ?? '',
-              productName: product.productName || '',
-              sku: product.sku || '',
-              barcode: product.barcode || '',
-              purchasePrice: product.purchasePrice ?? '',
-              sellingPrice: product.sellingPrice ?? '',
-              stockQuantity: product.stockQuantity ?? '',
-              minimumStock: product.minimumStock ?? '',
-              unit: product.unit || '',
-              status: product.status || 'active',
-            }
-          : EMPTY
-      )
-      setErrors({})
+  // Use passed categories, or fall back to internalCategories if empty
+  const activeCategories = useMemo(() => {
+    if (Array.isArray(categories) && categories.length > 0) {
+      return categories
     }
+    return internalCategories
+  }, [categories, internalCategories])
+
+  // If no categories were passed and modal opens, fetch them
+  useEffect(() => {
+    if (!isOpen) return
+    if (Array.isArray(categories) && categories.length > 0) return
+
+    let isMounted = true
+    setIsLoadingCategories(true)
+    getCategories()
+      .then((res) => {
+        if (isMounted && res?.data) {
+          setInternalCategories(Array.isArray(res.data) ? res.data : [])
+        }
+      })
+      .catch(() => {
+        // Handled gracefully via options
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingCategories(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [isOpen, categories])
+
+  // Initialize form state whenever modal opens or product changes
+  useEffect(() => {
+    if (!isOpen) return
+
+    if (product) {
+      const rawCatId = resolveProductCategoryId(product, activeCategories)
+      setValues({
+        categoryId: rawCatId != null && rawCatId !== '' ? String(rawCatId) : '',
+        productName: product.productName || '',
+        sku: product.sku || '',
+        barcode: product.barcode || '',
+        purchasePrice: product.purchasePrice != null ? String(product.purchasePrice) : '',
+        sellingPrice: product.sellingPrice != null ? String(product.sellingPrice) : '',
+        stockQuantity: product.stockQuantity != null ? String(product.stockQuantity) : '',
+        minimumStock: product.minimumStock != null ? String(product.minimumStock) : '',
+        unit: product.unit || '',
+        status: product.status || 'active',
+      })
+    } else {
+      setValues(EMPTY)
+    }
+    setErrors({})
   }, [isOpen, product])
 
-  const onChange = (field) => (e) => setValues((v) => ({ ...v, [field]: e.target.value }))
+  // Build selectable category options
+  const categoryOptions = useMemo(() => {
+    const list = (activeCategories || [])
+      .map((cat) => {
+        const id = getCategoryId(cat)
+        const name = getCategoryName(cat)
+        if (id == null || id === '') return null
+        return { value: String(id), label: name || `Category #${id}` }
+      })
+      .filter(Boolean)
 
-  const categoryOptions = (categories || []).map((c) => ({ value: c.id, label: c.categoryName }))
+    // If product has a category that isn't in activeCategories yet (e.g. while loading),
+    // inject a fallback option so the dropdown immediately shows the correct category
+    if (values.categoryId) {
+      const exists = list.some((opt) => opt.value === String(values.categoryId))
+      if (!exists) {
+        const fallbackName = resolveProductCategoryName(product, activeCategories) || `Category #${values.categoryId}`
+        list.unshift({ value: String(values.categoryId), label: fallbackName })
+      }
+    }
+
+    return list
+  }, [activeCategories, values.categoryId, product])
+
+  const onChange = (field) => (e) => {
+    const val = e.target.value
+    setValues((prev) => ({ ...prev, [field]: val }))
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: null }))
+    }
+  }
 
   const onSubmit = async (e) => {
     e.preventDefault()
+
     const fieldErrors = validate(values, {
       productName: [isRequired],
       sku: [isRequired],
-      categoryId: [isRequired],
+      categoryId: [(val) => (!val || String(val).trim() === '' ? 'Category is required.' : null)],
       purchasePrice: [isRequired, isPositiveNumber],
       sellingPrice: [isRequired, isPositiveNumber],
       stockQuantity: [isRequired, isPositiveNumber],
       minimumStock: [isPositiveNumber],
     })
+
     setErrors(fieldErrors)
     if (Object.keys(fieldErrors).length > 0) return
 
     setIsSubmitting(true)
     try {
       const payload = {
-        ...values,
+        productName: values.productName.trim(),
         categoryId: Number(values.categoryId),
+        sku: values.sku.trim(),
+        barcode: values.barcode ? values.barcode.trim() : '',
         purchasePrice: Number(values.purchasePrice),
         sellingPrice: Number(values.sellingPrice),
         stockQuantity: Number(values.stockQuantity),
         minimumStock: values.minimumStock === '' ? 0 : Number(values.minimumStock),
+        unit: values.unit ? values.unit.trim() : '',
+        status: values.status || 'active',
       }
+
       if (isEditMode) {
-        await updateProduct(product.id, payload)
+        const productId = getProductId(product)
+        if (!productId) {
+          throw new Error('Product ID is missing. Unable to update.')
+        }
+        await updateProduct(productId, payload)
         toast.success('Product updated successfully')
       } else {
         await createProduct(payload)
         toast.success('Product created successfully')
       }
+
       onSaved()
       onClose()
     } catch (err) {
-      // If API fails (dev server down or network error), persist locally as a fallback
-      try {
-        const payload = {
-          ...values,
-          categoryId: Number(values.categoryId),
-          purchasePrice: Number(values.purchasePrice),
-          sellingPrice: Number(values.sellingPrice),
-          stockQuantity: Number(values.stockQuantity),
-          minimumStock: values.minimumStock === '' ? 0 : Number(values.minimumStock),
-        }
-        const saved = JSON.parse(localStorage.getItem('local_products') || '[]')
-        if (isEditMode && product && product.id) {
-          // replace existing local item if present
-          const idx = saved.findIndex((p) => p.id === product.id)
-          if (idx !== -1) saved[idx] = { ...saved[idx], ...payload }
-          else saved.push({ id: product.id, ...payload })
-        } else {
-          // create temp id and push
-          const id = `local-${Date.now()}`
-          saved.push({ id, ...payload })
-        }
-        localStorage.setItem('local_products', JSON.stringify(saved))
-        toast.success('Product saved locally (offline fallback)')
-        onSaved()
-        onClose()
-      } catch (localErr) {
-        toast.error(err.message || 'Failed to save product')
-      }
+      toast.error(err.message || 'Failed to save product')
     } finally {
       setIsSubmitting(false)
     }
@@ -150,8 +208,9 @@ export default function ProductFormModal({ isOpen, onClose, onSaved, product, ca
           <Select
             label="Category"
             options={categoryOptions}
-            value={values.categoryId}
+            value={values.categoryId ?? ''}
             onChange={onChange('categoryId')}
+            placeholder={isLoadingCategories ? 'Loading categories…' : 'Select…'}
             error={errors.categoryId}
             required
           />

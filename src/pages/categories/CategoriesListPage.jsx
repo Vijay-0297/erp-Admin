@@ -11,6 +11,7 @@ import Button from '../../components/ui/Button.jsx'
 import Badge from '../../components/common/Badge.jsx'
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx'
 import CategoryFormModal from './CategoryFormModal.jsx'
+import { getCategoryId, normalizeCategory } from '../../utils/productUtils'
 
 export default function CategoriesListPage() {
   const { data: categories, isLoading, error, refetch } = useApi(getCategories, [])
@@ -20,16 +21,32 @@ export default function CategoriesListPage() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const { mutate: runDelete, isSubmitting: isDeleting } = useMutation(deleteCategory)
 
+  const mergedCategories = useMemo(() => {
+    try {
+      const localCategories = JSON.parse(localStorage.getItem('local_categories') || '[]')
+      const serverCategories = Array.isArray(categories) ? categories : []
+      const ids = new Set(serverCategories.map((c) => String(getCategoryId(c))))
+      const localOnly = localCategories.filter((c) => !ids.has(String(getCategoryId(c))))
+      return [...serverCategories, ...localOnly].map(normalizeCategory)
+    } catch {
+      return (Array.isArray(categories) ? categories : []).map(normalizeCategory)
+    }
+  }, [categories])
+
   const filteredCategories = useMemo(() => {
-    if (!categories) return []
+    if (!mergedCategories) return []
     const q = debouncedSearch.trim().toLowerCase()
-    if (!q) return categories
-    return categories.filter((c) => [c.categoryName, c.description].some((f) => f?.toLowerCase().includes(q)))
-  }, [categories, debouncedSearch])
+    if (!q) return mergedCategories
+    return mergedCategories.filter((c) => [c.categoryName, c.description].some((f) => f?.toLowerCase().includes(q)))
+  }, [mergedCategories, debouncedSearch])
 
   const handleDelete = async () => {
     try {
-      await runDelete(deleteTarget.id)
+      const catId = getCategoryId(deleteTarget)
+      if (!catId) {
+        throw new Error('Category ID missing. Unable to delete.')
+      }
+      await runDelete(catId)
       toast.success('Category deleted')
       setDeleteTarget(null)
       refetch()
@@ -83,6 +100,7 @@ export default function CategoriesListPage() {
         onRetry={refetch}
         emptyTitle="No categories found"
         emptyDescription={search ? 'Try a different search term.' : 'Create your first category to get started.'}
+        rowKey="id"
       />
 
       <CategoryFormModal

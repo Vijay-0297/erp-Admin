@@ -16,6 +16,8 @@ import ProductsListPage from '../pages/products/ProductsListPage.jsx'
 import PurchasesListPage from '../pages/purchases/PurchasesListPage.jsx'
 import PurchaseItemsListPage from '../pages/purchase-items/PurchaseItemsListPage.jsx'
 import SalesListPage from '../pages/sales/SalesListPage.jsx'
+import SalesReturnsListPage from '../pages/sales-returns/SalesReturnsListPage.jsx'
+import SalesItemsListPage from '../pages/sales-items/SalesItemsListPage.jsx'
 import NotFoundPage from '../pages/NotFoundPage.jsx'
 
 export default function AppRoutes() {
@@ -41,6 +43,8 @@ export default function AppRoutes() {
           <Route path="/purchases" element={<PurchasesListPage />} />
           <Route path="/purchase-items" element={<PurchaseItemsListPage />} />
           <Route path="/sales" element={<SalesListPage />} />
+          <Route path="/sales-returns" element={<SalesReturnsListPage />} />
+          <Route path="/sales-items" element={<SalesItemsListPage />} />
         </Route>
       </Route>
 

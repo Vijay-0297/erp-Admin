@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   ClipboardList,
   Receipt,
+  RotateCcw,
   X,
 } from 'lucide-react'
 
@@ -39,6 +40,8 @@ const NAV_SECTIONS = [
       { to: '/purchases', label: 'Purchases', icon: ShoppingCart },
       { to: '/purchase-items', label: 'Purchase Items', icon: ClipboardList },
       { to: '/sales', label: 'Sales', icon: Receipt },
+      { to: '/sales-returns', label: 'Sales Returns', icon: RotateCcw },
+      { to: '/sales-items', label: 'Sales Items', icon: ClipboardList },
     ],
   },
   {
