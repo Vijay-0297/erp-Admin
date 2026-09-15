@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Pencil, Trash2, FolderPlus } from 'lucide-react'
-import { getCategories, deleteCategory } from '../../api/categoryApi'
-import { useApi, useMutation } from '../../hooks/useApi'
+import { deleteCategory } from '../../api/categoryApi'
+import { useMutation } from '../../hooks/useApi'
+import { useCategories } from '../../context/CategoriesContext'
 import { useDebounce } from '../../hooks/useDebounce'
 import PageHeader from '../../components/common/PageHeader.jsx'
 import SearchInput from '../../components/forms/SearchInput.jsx'
@@ -14,7 +15,9 @@ import CategoryFormModal from './CategoryFormModal.jsx'
 import { getCategoryId, normalizeCategory } from '../../utils/productUtils'
 
 export default function CategoriesListPage() {
-  const { data: categories, isLoading, error, refetch } = useApi(getCategories, [])
+  const { categories, isLoading, error, refresh } = useCategories()
+  const { mutate: runDelete, isSubmitting: isDeleting } = useMutation(deleteCategory)
+  const refetch = refresh
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search)
   const [formState, setFormState] = useState({ isOpen: false, category: null })

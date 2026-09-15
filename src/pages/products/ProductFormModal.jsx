@@ -30,6 +30,10 @@ const EMPTY = {
 }
 
 export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories = [] }) {
+
+export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories }) {
+  const productKeyId = product?.id ?? product?.productId
+
   const isEditMode = Boolean(product)
   const [values, setValues] = useState(EMPTY)
   const [errors, setErrors] = useState({})
@@ -158,11 +162,45 @@ export default function ProductFormModal({ isOpen, onClose, onSaved, product, ca
       }
 
       if (isEditMode) {
+
         const productId = getProductId(product)
         if (!productId) {
           throw new Error('Product ID is missing. Unable to update.')
         }
         await updateProduct(productId, payload)
+
+        if (productKeyId == null) {
+          toast.error('Invalid product id')
+          return
+        }
+
+        // If product was saved locally (offline), update localStorage instead of calling API
+        if (typeof productKeyId === 'string' && productKeyId.startsWith('local-')) {
+          try {
+            const payloadLocal = { ...payload }
+            const saved = JSON.parse(localStorage.getItem('local_products') || '[]')
+            const idx = saved.findIndex((p) => p.id === productKeyId)
+            if (idx !== -1) saved[idx] = { ...saved[idx], ...payloadLocal }
+            else saved.push({ id: productKeyId, ...payloadLocal })
+            localStorage.setItem('local_products', JSON.stringify(saved))
+            toast.success('Product saved locally (offline)')
+            onSaved()
+            onClose()
+            return
+          } catch (localErr) {
+            toast.error(localErr?.message || 'Failed to save product locally')
+            return
+          }
+        }
+
+        const numericId = Number(productKeyId)
+        const idForRequest = Number.isFinite(numericId) ? numericId : productKeyId
+
+        console.log('Updating product:', idForRequest, payload)
+
+        // Include the id in the payload to avoid server errors when id is required in body
+        await updateProduct(idForRequest, { id: idForRequest, ...payload })
+
         toast.success('Product updated successfully')
       } else {
         await createProduct(payload)
@@ -172,7 +210,47 @@ export default function ProductFormModal({ isOpen, onClose, onSaved, product, ca
       onSaved()
       onClose()
     } catch (err) {
+
       toast.error(err.message || 'Failed to save product')
+
+      // If server returned validation errors, surface them instead of falling back
+      if (err && err.errors) {
+        setErrors(err.errors)
+        toast.error(err.message || 'Validation failed')
+        return
+      }
+
+      // Only use the localStorage offline fallback for network/timeouts
+      if (!err || err.isNetworkError || err.isTimeout) {
+        try {
+          const payload = {
+            ...values,
+            categoryId: Number(values.categoryId),
+            purchasePrice: Number(values.purchasePrice),
+            sellingPrice: Number(values.sellingPrice),
+            stockQuantity: Number(values.stockQuantity),
+            minimumStock: values.minimumStock === '' ? 0 : Number(values.minimumStock),
+          }
+          const saved = JSON.parse(localStorage.getItem('local_products') || '[]')
+          if (isEditMode && product && productKeyId) {
+            const idx = saved.findIndex((p) => p.id === productKeyId)
+            if (idx !== -1) saved[idx] = { ...saved[idx], ...payload }
+            else saved.push({ id: productKeyId, ...payload })
+          } else {
+            const id = `local-${Date.now()}`
+            saved.push({ id, ...payload })
+          }
+          localStorage.setItem('local_products', JSON.stringify(saved))
+          toast.success('Product saved locally (offline fallback)')
+          onSaved()
+          onClose()
+        } catch (localErr) {
+          toast.error(localErr?.message || 'Failed to save product locally')
+        }
+      } else {
+        toast.error(err?.message || 'Failed to save product')
+      }
+
     } finally {
       setIsSubmitting(false)
     }
@@ -262,4 +340,5 @@ export default function ProductFormModal({ isOpen, onClose, onSaved, product, ca
       </form>
     </Modal>
   )
+}
 }
