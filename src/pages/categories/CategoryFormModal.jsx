@@ -10,6 +10,7 @@ import { createCategory, updateCategory } from '../../api/categoryApi'
 import { useCategories } from '../../context/CategoriesContext'
 import { validate, isRequired } from '../../utils/validators'
 import { STATUS_OPTIONS } from '../../utils/constants'
+import { getCategoryId } from '../../utils/productUtils'
 
 const EMPTY = {
   categoryName: '',
@@ -73,6 +74,13 @@ export default function CategoryFormModal({
 
     try {
       if (isEditMode) {
+
+        const catId = getCategoryId(category)
+        if (!catId) {
+          throw new Error('Category ID missing. Unable to update.')
+        }
+        await updateCategory(catId, values)
+
         if (categoryKeyId == null) {
           toast.error('Invalid category id')
           return
@@ -89,6 +97,7 @@ export default function CategoryFormModal({
         const res = await updateCategory(idForRequest, { id: idForRequest, categoryId: idForRequest, ...values })
         const updated = res?.data || null
 
+
         toast.success('Category updated successfully')
         if (updated) updateCategoryLocal(updated)
       } else {
@@ -103,6 +112,29 @@ export default function CategoryFormModal({
       await onSaved()
       onClose()
     } catch (err) {
+
+      try {
+        const catId = getCategoryId(category)
+        const saved = JSON.parse(localStorage.getItem('local_categories') || '[]')
+        if (isEditMode && catId) {
+          const idx = saved.findIndex((c) => String(getCategoryId(c)) === String(catId))
+          if (idx !== -1) {
+            saved[idx] = { ...saved[idx], ...values, id: catId, categoryId: catId }
+          } else {
+            saved.push({ id: catId, categoryId: catId, ...values })
+          }
+        } else {
+          const newId = `local-${Date.now()}`
+          saved.push({ id: newId, categoryId: newId, ...values })
+        }
+        localStorage.setItem('local_categories', JSON.stringify(saved))
+        toast.success('Category saved locally (offline fallback)')
+        onSaved()
+        onClose()
+      } catch (localErr) {
+        toast.error(err.message || 'Failed to save category')
+      }
+
       console.error('Category save error:', err)
 
       // If server returned validation errors, display them on the form
@@ -113,6 +145,7 @@ export default function CategoryFormModal({
       }
 
       toast.error(err.message || 'Failed to save category')
+
     } finally {
       setIsSubmitting(false)
     }

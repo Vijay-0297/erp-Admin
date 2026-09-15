@@ -13,17 +13,40 @@ import Badge from '../../components/common/Badge.jsx'
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx'
 import ProductFormModal from './ProductFormModal.jsx'
 import { formatCurrency } from '../../utils/formatters'
+import {
+  getProductId,
+  getCategoryId,
+  resolveProductCategoryName,
+  normalizeProduct,
+  normalizeCategory,
+} from '../../utils/productUtils'
 
 export default function ProductsListPage() {
   const { data: products, isLoading, error, refetch } = useApi(getProducts, [])
+
+  const { data: categories, isLoading: isCategoriesLoading } = useApi(getCategories, [])
+
   const { categories } = useCategories()
 
   
+
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search)
   const [formState, setFormState] = useState({ isOpen: false, product: null })
   const [deleteTarget, setDeleteTarget] = useState(null)
   const { mutate: runDelete, isSubmitting: isDeleting } = useMutation(deleteProduct)
+
+
+  const mergedCategories = useMemo(() => {
+    try {
+      const localCategories = JSON.parse(localStorage.getItem('local_categories') || '[]')
+      const serverCategories = Array.isArray(categories) ? categories : []
+      const ids = new Set(serverCategories.map((c) => String(getCategoryId(c))))
+      const localOnly = localCategories.filter((c) => !ids.has(String(getCategoryId(c))))
+      return [...serverCategories, ...localOnly].map(normalizeCategory)
+    } catch {
+      return (Array.isArray(categories) ? categories : []).map(normalizeCategory)
+    }
 
   const categoryNameById = useMemo(() => {
     const map = {}
@@ -34,9 +57,44 @@ export default function ProductsListPage() {
       if (categoryId != null) map[String(categoryId)] = category.categoryName
     })
     return map
+
   }, [categories])
 
+  const mergedProducts = useMemo(() => {
+    try {
+      const localProducts = JSON.parse(localStorage.getItem('local_products') || '[]')
+      const serverProducts = Array.isArray(products) ? products : []
+      const ids = new Set(serverProducts.map((p) => String(getProductId(p))))
+      const skus = new Set(serverProducts.map((p) => p.sku).filter(Boolean))
+
+      // Keep only local products that don't collide with existing server products
+      const localOnly = localProducts.filter(
+        (p) => !ids.has(String(getProductId(p))) && (!p.sku || !skus.has(p.sku))
+      )
+      return [...serverProducts, ...localOnly].map(normalizeProduct)
+    } catch {
+      return (Array.isArray(products) ? products : []).map(normalizeProduct)
+    }
+  }, [products])
+
   const filteredProducts = useMemo(() => {
+
+    if (!mergedProducts) return []
+    const q = debouncedSearch.trim().toLowerCase()
+    if (!q) return mergedProducts
+    return mergedProducts.filter((p) =>
+      [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q))
+    )
+  }, [mergedProducts, debouncedSearch])
+
+  const handleDelete = async () => {
+    try {
+      const productId = getProductId(deleteTarget)
+      if (!productId) {
+        throw new Error('Product ID missing. Unable to delete.')
+      }
+      await runDelete(productId)
+
     // Merge any locally saved products (offline fallback) so they appear in the list
     const localSaved = (() => {
       try {
@@ -53,7 +111,7 @@ export default function ProductsListPage() {
     const q = debouncedSearch.trim().toLowerCase()
     if (!q) return merged
     return merged.filter((p) => [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q)))
-  }, [products, debouncedSearch])
+  } [products, debouncedSearch])
 
   const handleDelete = async () => {
     try {
@@ -76,6 +134,7 @@ export default function ProductsListPage() {
       }
 
       await runDelete(id)
+
       toast.success('Product deleted')
       setDeleteTarget(null)
       refetch()
@@ -90,7 +149,12 @@ export default function ProductsListPage() {
     {
       key: 'categoryId',
       header: 'Category',
+
+      sortable: true,
+      render: (row) => resolveProductCategoryName(row, mergedCategories) || '—',
+
       render: (row) => categoryNameById[String(row.categoryId)] || '—',
+
     },
     { key: 'sellingPrice', header: 'Price', sortable: true, render: (row) => formatCurrency(row.sellingPrice) },
     {
@@ -99,7 +163,11 @@ export default function ProductsListPage() {
       sortable: true,
       render: (row) => {
         const low = Number(row.stockQuantity) <= Number(row.minimumStock ?? 0)
-        return <Badge tone={low ? 'warning' : 'success'}>{row.stockQuantity} {row.unit}</Badge>
+        return (
+          <Badge tone={low ? 'warning' : 'success'}>
+            {row.stockQuantity} {row.unit}
+          </Badge>
+        )
       },
     },
     { key: 'status', header: 'Status', render: (row) => <Badge>{row.status}</Badge> },
@@ -144,6 +212,7 @@ export default function ProductsListPage() {
         onRetry={refetch}
         emptyTitle="No products found"
         emptyDescription={search ? 'Try a different search term.' : 'Add your first product to get started.'}
+        rowKey="id"
       />
 
       <ProductFormModal
@@ -151,7 +220,7 @@ export default function ProductsListPage() {
         onClose={() => setFormState({ isOpen: false, product: null })}
         onSaved={refetch}
         product={formState.product}
-        categories={categories}
+        categories={mergedCategories}
       />
 
       <ConfirmDialog
