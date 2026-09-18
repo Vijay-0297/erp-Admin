@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Pencil, Trash2, PackagePlus } from 'lucide-react'
 import { getProducts, deleteProduct } from '../../api/productApi'
+import { getCategories } from '../../api/categoryApi'
 import { useApi, useMutation } from '../../hooks/useApi'
 import { useCategories } from '../../context/CategoriesContext'
 import { useDebounce } from '../../hooks/useDebounce'
@@ -23,12 +24,8 @@ import {
 
 export default function ProductsListPage() {
   const { data: products, isLoading, error, refetch } = useApi(getProducts, [])
-
   const { data: categories, isLoading: isCategoriesLoading } = useApi(getCategories, [])
-
-  const { categories } = useCategories()
-
-  
+  const { categories: categoriesFromContext } = useCategories()
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search)
@@ -40,25 +37,23 @@ export default function ProductsListPage() {
   const mergedCategories = useMemo(() => {
     try {
       const localCategories = JSON.parse(localStorage.getItem('local_categories') || '[]')
-      const serverCategories = Array.isArray(categories) ? categories : []
+      const serverCategories = Array.isArray(categoriesFromContext ?? categories) ? (categoriesFromContext ?? categories) : []
       const ids = new Set(serverCategories.map((c) => String(getCategoryId(c))))
       const localOnly = localCategories.filter((c) => !ids.has(String(getCategoryId(c))))
       return [...serverCategories, ...localOnly].map(normalizeCategory)
     } catch {
-      return (Array.isArray(categories) ? categories : []).map(normalizeCategory)
+      return (Array.isArray(categoriesFromContext ?? categories) ? (categoriesFromContext ?? categories) : []).map(normalizeCategory)
     }
+  }, [categories, categoriesFromContext])
 
   const categoryNameById = useMemo(() => {
     const map = {}
-    ;(categories || []).forEach((category) => {
-      // The backend may expose the primary key as either `id` or `categoryId`.
-      // Normalizing it also handles number/string ID differences.
+    ;((categoriesFromContext ?? categories) || []).forEach((category) => {
       const categoryId = category.id ?? category.categoryId
       if (categoryId != null) map[String(categoryId)] = category.categoryName
     })
     return map
-
-  }, [categories])
+  }, [categories, categoriesFromContext])
 
   const mergedProducts = useMemo(() => {
     try {
@@ -86,32 +81,6 @@ export default function ProductsListPage() {
       [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q))
     )
   }, [mergedProducts, debouncedSearch])
-
-  const handleDelete = async () => {
-    try {
-      const productId = getProductId(deleteTarget)
-      if (!productId) {
-        throw new Error('Product ID missing. Unable to delete.')
-      }
-      await runDelete(productId)
-
-    // Merge any locally saved products (offline fallback) so they appear in the list
-    const localSaved = (() => {
-      try {
-        return JSON.parse(localStorage.getItem('local_products') || '[]')
-      } catch (e) {
-        return []
-      }
-    })()
-
-    const merged = (products || []).concat(
-      (localSaved || []).filter((lp) => !(products || []).some((p) => p.id === lp.id))
-    )
-    if (!merged) return []
-    const q = debouncedSearch.trim().toLowerCase()
-    if (!q) return merged
-    return merged.filter((p) => [p.productName, p.sku, p.barcode].some((f) => f?.toLowerCase().includes(q)))
-  } [products, debouncedSearch])
 
   const handleDelete = async () => {
     try {
@@ -149,12 +118,8 @@ export default function ProductsListPage() {
     {
       key: 'categoryId',
       header: 'Category',
-
       sortable: true,
-      render: (row) => resolveProductCategoryName(row, mergedCategories) || '—',
-
-      render: (row) => categoryNameById[String(row.categoryId)] || '—',
-
+      render: (row) => resolveProductCategoryName(row, mergedCategories) || categoryNameById[String(row.categoryId)] || '—',
     },
     { key: 'sellingPrice', header: 'Price', sortable: true, render: (row) => formatCurrency(row.sellingPrice) },
     {

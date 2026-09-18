@@ -38,9 +38,13 @@ const NAV_SECTIONS = [
     label: 'Transactions',
     items: [
       { to: '/purchases', label: 'Purchases', icon: ShoppingCart },
+      { to: '/purchase-returns', label: 'Purchase Returns', icon: RotateCcw },
+          { to: '/purchase-return-items', label: 'Purchase Return Items', icon: ClipboardList },
       { to: '/purchase-items', label: 'Purchase Items', icon: ClipboardList },
+          { to: '/stock-movements', label: 'Stock Movements', icon: ClipboardList },
       { to: '/sales', label: 'Sales', icon: Receipt },
       { to: '/sales-returns', label: 'Sales Returns', icon: RotateCcw },
+      { to: '/sales-return-items', label: 'Sales Return Items', icon: ClipboardList },
       { to: '/sales-items', label: 'Sales Items', icon: ClipboardList },
     ],
   },
@@ -49,6 +53,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/users', label: 'Users', icon: Users },
       { to: '/roles', label: 'Roles', icon: ShieldCheck },
+      { to: '/settings', label: 'Settings', icon: ShieldCheck },
     ],
   },
 ]

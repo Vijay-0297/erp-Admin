@@ -30,8 +30,6 @@ const EMPTY = {
 }
 
 export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories = [] }) {
-
-export default function ProductFormModal({ isOpen, onClose, onSaved, product, categories }) {
   const productKeyId = product?.id ?? product?.productId
 
   const isEditMode = Boolean(product)
@@ -340,5 +338,4 @@ export default function ProductFormModal({ isOpen, onClose, onSaved, product, ca
       </form>
     </Modal>
   )
-}
 }

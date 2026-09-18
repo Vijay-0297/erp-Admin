@@ -22,7 +22,6 @@ export default function CategoriesListPage() {
   const debouncedSearch = useDebounce(search)
   const [formState, setFormState] = useState({ isOpen: false, category: null })
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const { mutate: runDelete, isSubmitting: isDeleting } = useMutation(deleteCategory)
 
   const mergedCategories = useMemo(() => {
     try {
